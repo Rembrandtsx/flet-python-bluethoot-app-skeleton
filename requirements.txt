@@ -1,4 +1,5 @@
 flet>=0.27.1
+-e ./packages/flet_ble_bridge
 bleak>=0.22.0
 pyjnius>=1.6.1
 flet-permission-handler>=0.84.0

@@ -1,15 +1,27 @@
 [project]
 name = "flet-bluetooth-prototype"
 version = "0.1.0"
-description = "Flet Bluetooth prototype using Android native APIs via Pyjnius"
+description = "Flet Bluetooth prototype: Flutter BLE bridge + Python parsing (Pyjnius optional)"
 requires-python = ">=3.10"
 dependencies = [
     "flet>=0.27.1",
+    "flet-ble-bridge",
     "bleak>=0.22.0",
     "flet-permission-handler>=0.84.0",
     "certifi>=2024.0.0",
     "tomli>=2.0.0; python_version < '3.11'",
 ]
+
+[dependency-groups]
+dev = [
+    "flet-cli>=0.84.0",
+]
+
+[tool.uv.sources]
+flet-ble-bridge = { path = "packages/flet_ble_bridge", editable = true }
+
+[tool.flet.dev_packages]
+flet-ble-bridge = "packages/flet_ble_bridge"
 
 [tool.flet.app]
 path = "src"

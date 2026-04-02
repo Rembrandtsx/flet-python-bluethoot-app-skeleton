@@ -1,0 +1,22 @@
+[project]
+name = "flet-ble-bridge"
+version = "0.1.0"
+description = "Flet service: Flutter BLE (flutter_blue_plus) → Python events"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "flet>=0.84.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"flutter.flet_ble_bridge" = ["**/*"]
+
+[tool.setuptools]
+license-files = []
+
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"

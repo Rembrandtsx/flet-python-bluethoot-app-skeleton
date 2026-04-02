@@ -11,12 +11,15 @@ import sys
 import threading
 import time
 from collections.abc import Callable
+from types import SimpleNamespace
 from typing import Optional
 
 import flet as ft
 
 from ble_desktop import start_ble_desktop
+from flet_ble_bridge import FletBleBridge
 from esp32_sensor import (
+    CHAR_UUID,
     TARGET_NAME,
     SensorState,
     apply_sample,
@@ -64,6 +67,11 @@ def _sparkline(ir_values: list[float], max_bars: int = 72) -> ft.Control:
 
 
 async def main(page: ft.Page) -> None:
+    # Android: default = Flutter BLE (flet_ble_bridge). Set FLET_USE_PYJNIUS_BLE=1 for Pyjnius GATT.
+    use_pyjnius_ble = os.environ.get("FLET_USE_PYJNIUS_BLE") == "1"
+    # Verbose Dart traces → in-app log (also adb logcat: lines prefixed [flet_ble_bridge]). Set FLET_BLE_BRIDGE_DEBUG=0 to hide from app.
+    dart_ble_bridge_debug = os.environ.get("FLET_BLE_BRIDGE_DEBUG", "1") != "0"
+
     page.title = "ESP32 Biosensores"
     page.horizontal_alignment = ft.CrossAxisAlignment.STRETCH
     page.vertical_alignment = ft.MainAxisAlignment.START
@@ -146,7 +154,7 @@ async def main(page: ft.Page) -> None:
             app_log_ui(f"Diagnóstico: no se pudo copiar ({exc})")
 
     device_list = ft.Dropdown(
-        label="Dispositivo (emparejados + GATT conectados)",
+        label="Dispositivo (BLE)",
         options=[],
         expand=True,
     )
@@ -161,6 +169,16 @@ async def main(page: ft.Page) -> None:
     android_disconnect: Optional[Callable[[], None]] = None
     pump_running = True
     rx_count = 0
+
+    ble_bridge: Optional[FletBleBridge] = None
+    if is_android() and not use_pyjnius_ble:
+        ble_bridge = FletBleBridge(
+            char_uuid=CHAR_UUID,
+            bridge_debug=dart_ble_bridge_debug,
+            on_notification=lambda e: data_queue.put(e.text),
+            on_status=lambda e: _ui_status_queue.put(e.message),
+            on_bridge_log=lambda e: app_log(f"[dart] {e.message}"),
+        )
 
     async def override_click(_) -> None:
         state.manual_override = True
@@ -218,6 +236,43 @@ async def main(page: ft.Page) -> None:
             app_log_ui("scan_devices: permisos no concedidos, abort")
             return
 
+        if not use_pyjnius_ble and ble_bridge is not None:
+            try:
+                app_log_ui("scan_devices: Flutter BLE (flet_ble_bridge)…")
+                rows = await ble_bridge.scan_ble(TARGET_NAME, timeout_ms=12000)
+            except Exception as exc:
+                app_log_ui(f"scan_devices: scan_ble error ({exc})")
+                status_text.value = f"Estado: error scan ({exc})"
+                page.update()
+                return
+            use: list[SimpleNamespace] = []
+            for row in rows or []:
+                if not isinstance(row, dict):
+                    continue
+                mac = row.get("mac")
+                if not mac:
+                    continue
+                use.append(
+                    SimpleNamespace(
+                        name=str(row.get("name") or ""),
+                        address=str(mac),
+                    )
+                )
+            filtered = [d for d in use if TARGET_NAME in (d.name or "")]
+            pick = filtered if filtered else use
+            device_list.options = [
+                ft.dropdown.Option(f"{d.name or '—'} ({d.address})") for d in pick
+            ]
+            if not pick:
+                app_log_ui("scan_devices: sin dispositivos en escaneo BLE")
+                status_text.value = "Estado: sin dispositivos"
+            else:
+                for d in pick:
+                    app_log_ui(f"scan_devices: opción {d.name!r} {d.address}")
+                status_text.value = f"Estado: {len(pick)} dispositivo(s)"
+            page.update()
+            return
+
         try:
             from bluetooth_android import list_bonded_and_connected_devices
         except Exception as exc:
@@ -263,6 +318,11 @@ async def main(page: ft.Page) -> None:
     async def connect_click(_) -> None:
         nonlocal ble_thread, android_disconnect, rx_count
         app_log_ui("connect_click: inicio (reset sesión)")
+        if is_android() and not use_pyjnius_ble and ble_bridge is not None:
+            try:
+                await ble_bridge.disconnect_ble()
+            except Exception as exc:
+                app_log_ui(f"connect_click: cerrar Flutter BLE previo ({exc})")
         if android_disconnect is not None:
             app_log_ui("connect_click: cerrando sesión BLE anterior")
             try:
@@ -307,7 +367,24 @@ async def main(page: ft.Page) -> None:
 
             android_disconnect = None
 
-            # Android: Pyjnius BluetoothGatt only (Bleak optional module not used here).
+            if not use_pyjnius_ble and ble_bridge is not None:
+                try:
+                    app_log_ui("connect_click: Flutter BLE (flet_ble_bridge)...")
+                    ok = await ble_bridge.connect_ble(mac)
+                except Exception as exc:
+                    app_log_ui(f"connect_click: connect_ble excepción ({exc})")
+                    status_text.value = f"Estado: Flutter BLE error ({exc})"
+                    page.update()
+                    return
+                if not ok:
+                    app_log_ui("connect_click: connect_ble devolvió false")
+                    status_text.value = "Estado: no se pudo conectar (Flutter BLE)"
+                else:
+                    app_log_ui("connect_click: Flutter BLE conectado (notificaciones → Python)")
+                page.update()
+                return
+
+            # Android: Pyjnius BluetoothGatt (opt-in via FLET_USE_PYJNIUS_BLE=1).
             try:
                 from ble_android_gatt import connect_ble_notify
             except Exception as exc:
@@ -349,6 +426,11 @@ async def main(page: ft.Page) -> None:
         nonlocal android_disconnect, ble_thread
         app_log_ui("disconnect_click: desconectando...")
         stop_event.set()
+        if is_android() and not use_pyjnius_ble and ble_bridge is not None:
+            try:
+                await ble_bridge.disconnect_ble()
+            except Exception as exc:
+                app_log_ui(f"disconnect_click: Flutter BLE ({exc})")
         if android_disconnect is not None:
             try:
                 android_disconnect()
@@ -482,7 +564,17 @@ async def main(page: ft.Page) -> None:
     )
     page.add(ft.SafeArea(content=body, expand=True) if is_android() else body)
 
-    app_log_ui(f"app: arranque (android={is_android()})")
+    if is_android():
+        app_log_ui(
+            "app: arranque Android — BLE "
+            + (
+                "Pyjnius (FLET_USE_PYJNIUS_BLE=1)"
+                if use_pyjnius_ble
+                else "Flutter / flutter_blue_plus (flet_ble_bridge)"
+            )
+        )
+    else:
+        app_log_ui(f"app: arranque (android={is_android()})")
 
     asyncio.create_task(pump())
 
