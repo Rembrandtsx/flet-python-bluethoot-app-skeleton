@@ -1,0 +1,20 @@
+[project]
+name = "flet-bluetooth-prototype"
+version = "0.1.0"
+description = "Flet Bluetooth prototype using Android native APIs via Pyjnius"
+requires-python = ">=3.10"
+dependencies = [
+    "flet>=0.27.1",
+    "bleak>=0.22.0",
+    "certifi>=2024.0.0",
+]
+
+[tool.flet.app]
+path = "src"
+module = "main"
+
+[tool.flet.android]
+dependencies = [
+    "pyjnius",
+]
+
