@@ -1,4 +1,6 @@
 import "dart:async";
+import "dart:convert";
+import "dart:typed_data";
 
 import "package:flet/flet.dart";
 import "package:flutter/foundation.dart";
@@ -11,6 +13,7 @@ class FletBleBridgeService extends FletService {
 
   StreamSubscription<List<int>>? _notifySub;
   BluetoothDevice? _device;
+  int _notifyHexLogsLeft = 0;
 
   /// Console: always (Android: `adb logcat | grep flet_ble`). Python: only if `bridge_debug`.
   void _log(String msg) {
@@ -47,6 +50,13 @@ class FletBleBridgeService extends FletService {
   String _charUuid() =>
       control.getString("char_uuid", "12345678-1234-5678-1234-56789abcdef1")!;
 
+  /// BLE plugins sometimes surface Java/Kotlin bytes as signed [-128,127]. Normalize
+  /// to unsigned before UTF-8 decode (matches Pyjnius `bytes(raw).decode` / Bleak).
+  String _notifyBytesToString(List<int> value) {
+    final bytes = Uint8List.fromList([for (final b in value) b & 0xFF]);
+    return utf8.decode(bytes, allowMalformed: true);
+  }
+
   void _emitStatus(String message) {
     // Always use WithoutSubscribers: Flet's triggerControlEvent drops events unless
     // `on_status` is true on the Dart control mirror, and Service controls often do
@@ -61,7 +71,7 @@ class FletBleBridgeService extends FletService {
   }
 
   Future<bool> _connect(String mac) async {
-    _log("connect start mac=$mac char=${_charUuid}");
+    _log("connect start mac=$mac char=${_charUuid()}");
     await _disconnect();
     if (!await FlutterBluePlus.isSupported) {
       _log("connect abort: isSupported=false");
@@ -150,10 +160,22 @@ class FletBleBridgeService extends FletService {
     }
 
     _log("subscribing onValueReceived…");
+    _notifyHexLogsLeft = 5;
     _notifySub = target.onValueReceived.listen(
       (value) {
         try {
-          final text = String.fromCharCodes(value);
+          final text = _notifyBytesToString(value);
+          if ((control.getBool("bridge_debug", false) ?? false) &&
+              value.isNotEmpty &&
+              _notifyHexLogsLeft > 0) {
+            _notifyHexLogsLeft--;
+            final n = value.length > 16 ? 16 : value.length;
+            final hex = value
+                .take(n)
+                .map((b) => (b & 0xFF).toRadixString(16).padLeft(2, "0"))
+                .join(" ");
+            _log("onValueReceived len=${value.length} hex[:$n]=$hex");
+          }
           _emitNotification(text);
         } catch (e) {
           _log("onValueReceived decode error: $e");
@@ -186,41 +208,119 @@ class FletBleBridgeService extends FletService {
     _emitStatus("Desconectado");
   }
 
+  void _ingestScanResults(
+    List<ScanResult> results,
+    String targetName,
+    List<Map<String, dynamic>> list,
+    Set<String> seen, {
+    String source = "scan",
+  }) {
+    _log("scanResults batch size=${results.length} ($source)");
+    for (final sr in results) {
+      final dev = sr.device;
+      final name = dev.platformName;
+      // Skip only when we know the name and it cannot match (empty name = still show; MAC may be enough).
+      if (targetName.isNotEmpty &&
+          name.isNotEmpty &&
+          !name.contains(targetName)) {
+        continue;
+      }
+      final id = dev.remoteId.str;
+      if (seen.contains(id)) {
+        continue;
+      }
+      seen.add(id);
+      list.add({"name": name, "mac": id});
+      _log(
+          "  candidate name=${name.isEmpty ? "(empty)" : name} mac=$id rssi=${sr.rssi}");
+    }
+  }
+
+  Future<void> _prepareScan() async {
+    try {
+      if (FlutterBluePlus.isScanningNow) {
+        _log("prepareScan: stopping stuck scan");
+        await FlutterBluePlus.stopScan();
+      }
+    } catch (e) {
+      _log("prepareScan stopScan: $e");
+    }
+    // Let Android scanner fully release before the next start (avoids SCAN_FAILED_* / empty results).
+    await Future<void>.delayed(const Duration(milliseconds: 400));
+  }
+
+  Future<void> _addBondedDevices(
+    String targetName,
+    List<Map<String, dynamic>> list,
+    Set<String> seen,
+  ) async {
+    try {
+      final bonded = await FlutterBluePlus.bondedDevices;
+      _log("bondedDevices count=${bonded.length}");
+      for (final d in bonded) {
+        final id = d.remoteId.str;
+        if (seen.contains(id)) {
+          continue;
+        }
+        final name = d.platformName;
+        if (targetName.isNotEmpty &&
+            name.isNotEmpty &&
+            !name.contains(targetName)) {
+          continue;
+        }
+        seen.add(id);
+        list.add({"name": name, "mac": id});
+        _log(
+            "  bonded name=${name.isEmpty ? "(empty)" : name} mac=$id");
+      }
+    } catch (e) {
+      _log("bondedDevices (skip): $e");
+    }
+  }
+
   Future<List<Map<String, dynamic>>> _scan(String targetName, int timeoutMs) async {
     _log("scan start targetName=${targetName.isEmpty ? "(any)" : targetName} timeoutMs=$timeoutMs");
     if (!await FlutterBluePlus.isSupported) {
       _log("scan abort: not supported");
       return [];
     }
+    if (!await FlutterBluePlus.isOn) {
+      _log("scan abort: Bluetooth off");
+      _emitStatus("Bluetooth apagado");
+      return [];
+    }
+    if (FlutterBluePlus.adapterStateNow != BluetoothAdapterState.on) {
+      _log("scan abort: adapterState=${FlutterBluePlus.adapterStateNow}");
+    }
+
     final list = <Map<String, dynamic>>[];
     final seen = <String>{};
 
+    await _prepareScan();
+    await _addBondedDevices(targetName, list, seen);
+
     late StreamSubscription<List<ScanResult>> sub;
     sub = FlutterBluePlus.scanResults.listen((results) {
-      _log("scanResults batch size=${results.length}");
-      for (final sr in results) {
-        final dev = sr.device;
-        final name = dev.platformName;
-        if (targetName.isNotEmpty && !name.contains(targetName)) {
-          continue;
-        }
-        final id = dev.remoteId.str;
-        if (seen.contains(id)) {
-          continue;
-        }
-        seen.add(id);
-        list.add({"name": name, "mac": id});
-        _log("  candidate name=${name.isEmpty ? "(empty)" : name} mac=$id rssi=${sr.rssi}");
-      }
+      _ingestScanResults(results, targetName, list, seen, source: "stream");
     });
 
     try {
       await FlutterBluePlus.startScan(
         timeout: Duration(milliseconds: timeoutMs),
         androidUsesFineLocation: true,
+        // If system GPS is off, FBP may refuse to scan even when BT permissions are OK.
+        androidCheckLocationServices: false,
       );
-      await Future<void>.delayed(Duration(milliseconds: timeoutMs + 300));
+      await Future<void>.delayed(Duration(milliseconds: timeoutMs + 500));
       await FlutterBluePlus.stopScan();
+      // Flush any deduped cache the plugin still holds.
+      _ingestScanResults(
+        List<ScanResult>.from(FlutterBluePlus.lastScanResults),
+        targetName,
+        list,
+        seen,
+        source: "lastScanResults",
+      );
     } catch (e) {
       _log("scan exception: $e");
       _emitStatus("scan: $e");

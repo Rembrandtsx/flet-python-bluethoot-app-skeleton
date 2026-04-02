@@ -1,4 +1,5 @@
 import asyncio
+import os
 import threading
 import queue
 import time
@@ -30,6 +31,50 @@ manual_override = False
 finger_detected = False
 IR_THRESHOLD = 50000
 
+# ================= RAW LOGGING (PC + sensor debugging) =================
+# Set INTERFAZ_PRCO_RAW_LOG=0 to disable. INTERFAZ_PRCO_RAW_LOG_INTERVAL=N logs every N-th packet (default 1).
+_raw_log_lock = threading.Lock()
+_raw_rx_count = 0
+
+
+def _raw_log_enabled() -> bool:
+    return os.environ.get("INTERFAZ_PRCO_RAW_LOG", "1").strip().lower() not in (
+        "0",
+        "false",
+        "no",
+        "off",
+    )
+
+
+def _raw_log_interval() -> int:
+    try:
+        return max(1, int(os.environ.get("INTERFAZ_PRCO_RAW_LOG_INTERVAL", "1")))
+    except ValueError:
+        return 1
+
+
+def _log_ble_raw(text: str) -> None:
+    global _raw_rx_count
+    if not _raw_log_enabled():
+        return
+    with _raw_log_lock:
+        _raw_rx_count += 1
+        n = _raw_rx_count
+    if n % _raw_log_interval() != 0:
+        return
+    ts = time.strftime("%H:%M:%S")
+    preview = text if len(text) <= 200 else text[:197] + "..."
+    print(f"[{ts}] BLE RAW #{n} len={len(text)} {preview!r}")
+
+
+def _log_ble_parse_error(text: str, exc: BaseException) -> None:
+    if not _raw_log_enabled():
+        return
+    ts = time.strftime("%H:%M:%S")
+    sample = text if len(text) <= 120 else text[:117] + "..."
+    print(f"[{ts}] BLE PARSE ERROR: {exc!r} raw={sample!r}")
+
+
 # ================= BLE RECEIVER =================
 def ble_receiver():
     async def run():
@@ -49,15 +94,30 @@ def ble_receiver():
 
             def handler(_, data):
                 try:
-                    text = data.decode()
+                    text = data.decode(errors="replace").strip()
+                    _log_ble_raw(text)
+
                     values = {}
                     for item in text.split(","):
-                        k, v = item.split(":")
-                        values[k] = float(v)
+                        item = item.strip()
+                        if not item:
+                            continue
+                        if ":" in item:
+                            k, v = item.split(":", 1)
+                        elif "=" in item:
+                            k, v = item.split("=", 1)
+                        else:
+                            continue
+                        values[k.strip().upper()] = float(v.strip())
 
-                    data_queue.put(values)
-                except:
-                    pass
+                    if values:
+                        data_queue.put(values)
+                except Exception as e:
+                    try:
+                        raw_preview = data.decode(errors="replace")
+                    except Exception:
+                        raw_preview = f"<bytes len={len(data)}>"
+                    _log_ble_parse_error(raw_preview, e)
 
             await client.start_notify(CHAR_UUID, handler)
 

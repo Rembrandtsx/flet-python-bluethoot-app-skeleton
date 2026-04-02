@@ -20,6 +20,7 @@ from ble_desktop import start_ble_desktop
 from flet_ble_bridge import FletBleBridge
 from esp32_sensor import (
     CHAR_UUID,
+    IR_THRESHOLD,
     TARGET_NAME,
     SensorState,
     apply_sample,
@@ -91,11 +92,21 @@ async def main(page: ft.Page) -> None:
     )
     move_text = ft.Text("Movimiento: No", size=16)
     alert_text = ft.Text("Estado: OK", size=18, color=ft.Colors.BLUE_GREY)
+    chart_caption = ft.Text(
+        "Gráfico = señal IR (PPG). Si IR=0, la línea queda plana aunque el IMU se mueva.",
+        size=11,
+        color=ft.Colors.GREY_700,
+    )
     chart_host = ft.Column(controls=[_sparkline([])], tight=True)
 
     connected_text = ft.Text("Conectado a: —", size=14, color=ft.Colors.GREY_700)
     rx_counter_text = ft.Text("RX: 0", size=14, color=ft.Colors.GREY_700)
     last_parsed_text = ft.Text("Último dato: —", size=12, color=ft.Colors.GREY_700)
+    live_sensor_text = ft.Text(
+        "Último paquete (parseado): —",
+        size=12,
+        color=ft.Colors.GREY_800,
+    )
 
     debug_title = ft.Text("Raw sensor data (debug):", size=14, weight=ft.FontWeight.W_600)
     debug_log = ft.ListView(
@@ -339,6 +350,7 @@ async def main(page: ft.Page) -> None:
         connected_text.value = "Conectado a: —"
         rx_counter_text.value = "RX: 0"
         last_parsed_text.value = "Último dato: —"
+        live_sensor_text.value = "Último paquete (parseado): —"
         debug_log.controls = [ft.Text("—", size=12, color=ft.Colors.GREY_600)]
         page.update()
 
@@ -497,6 +509,17 @@ async def main(page: ft.Page) -> None:
                     apply_sample(state, parsed, now)
                     keys = ", ".join(sorted(parsed.keys()))
                     last_parsed_text.value = f"Último dato (parsed): [{keys}]"
+                    ax = float(parsed.get("AX", 0.0))
+                    ay = float(parsed.get("AY", 0.0))
+                    az = float(parsed.get("AZ", 0.0))
+                    ir_v = float(parsed.get("IR", 0.0))
+                    bpm_v = float(parsed.get("BPM", 0.0))
+                    mag = (ax * ax + ay * ay + az * az) ** 0.5
+                    live_sensor_text.value = (
+                        f"Último paquete: AX={ax:.3f} AY={ay:.3f} AZ={az:.3f} | "
+                        f"|A|={mag:.3f} | IR={ir_v:.0f} | BPM={bpm_v:.2f} "
+                        f"(dedo si IR>{IR_THRESHOLD})"
+                    )
 
             status_msg_val, alert_val, moving, _bpm_shown, show_ov = step_ui_state(state, now)
             status_msg.value = status_msg_val
@@ -537,6 +560,7 @@ async def main(page: ft.Page) -> None:
             ),
             status_text,
             controls_column,
+            chart_caption,
             chart_host,
             status_msg,
             move_text,
@@ -545,6 +569,7 @@ async def main(page: ft.Page) -> None:
             connected_text,
             rx_counter_text,
             last_parsed_text,
+            live_sensor_text,
             ft.Divider(height=1, color=ft.Colors.GREY_400),
             app_log_title,
             ft.Row(
