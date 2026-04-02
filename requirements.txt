@@ -1,5 +1,6 @@
 flet>=0.27.1
 bleak>=0.22.0
 pyjnius>=1.6.1
+flet-permission-handler>=0.84.0
 certifi>=2024.0.0
 

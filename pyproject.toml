@@ -6,7 +6,9 @@ requires-python = ">=3.10"
 dependencies = [
     "flet>=0.27.1",
     "bleak>=0.22.0",
+    "flet-permission-handler>=0.84.0",
     "certifi>=2024.0.0",
+    "tomli>=2.0.0; python_version < '3.11'",
 ]
 
 [tool.flet.app]
@@ -17,4 +19,12 @@ module = "main"
 dependencies = [
     "pyjnius",
 ]
+min_sdk_version = 24
+
+[tool.flet.android.permission]
+"android.permission.BLUETOOTH" = true
+"android.permission.BLUETOOTH_ADMIN" = true
+"android.permission.BLUETOOTH_CONNECT" = true
+"android.permission.BLUETOOTH_SCAN" = true
+"android.permission.ACCESS_FINE_LOCATION" = true
 

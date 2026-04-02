@@ -12,4 +12,5 @@ if [[ -f .venv/bin/activate ]]; then
 fi
 export SSL_CERT_FILE="$(python -c 'import certifi; print(certifi.where())')"
 export REQUESTS_CA_BUNDLE="$SSL_CERT_FILE"
-exec flet "$@"
+# BleGatt Java bridge is synced inside flet_with_ble_gatt.py immediately before Gradle (required for APK).
+exec python "$ROOT/scripts/flet_with_ble_gatt.py" "$@"
