@@ -1,0 +1,7 @@
+[
+{
+  "directory": "/Users/rembrandtsx/Documents/repos/GitHub/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/android/.cxx/RelWithDebInfo/1o2p241e/armeabi-v7a",
+  "command": "/Users/rembrandtsx/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/bin/clang --target=armv7-none-linux-androideabi21 --sysroot=/Users/rembrandtsx/Library/Android/sdk/ndk/27.0.12077973/toolchains/llvm/prebuilt/darwin-x86_64/sysroot -DDART_SHARED_LIB -Dserious_python_EXPORTS -g -DANDROID -fdata-sections -ffunction-sections -funwind-tables -fstack-protector-strong -no-canonical-prefixes -D_FORTIFY_SOURCE=2 -march=armv7-a -mthumb -Wformat -Werror=format-security  -O2 -g -DNDEBUG -fPIC -o CMakeFiles/serious_python.dir/serious_python.c.o -c /Users/rembrandtsx/Documents/repos/GitHub/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/src/serious_python.c",
+  "file": "/Users/rembrandtsx/Documents/repos/GitHub/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/src/serious_python.c"
+}
+]

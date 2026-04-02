@@ -1,0 +1,27 @@
+{
+  "buildFiles": [
+    "/Users/rembrandtsx/Documents/repos/GitHub/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/src/CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "/Users/rembrandtsx/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+      "-C",
+      "/Users/rembrandtsx/Documents/repos/GitHub/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/android/.cxx/RelWithDebInfo/1o2p241e/arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "/Users/rembrandtsx/Library/Android/sdk/cmake/3.22.1/bin/ninja",
+    "-C",
+    "/Users/rembrandtsx/Documents/repos/GitHub/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/android/.cxx/RelWithDebInfo/1o2p241e/arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "serious_python::@6890427a1f51a3e7e1df": {
+      "artifactName": "serious_python",
+      "abi": "arm64-v8a",
+      "output": "/Users/rembrandtsx/Documents/repos/GitHub/flet-python-bluethoot-app-skeleton/build/flutter/build/serious_python_android/intermediates/cxx/RelWithDebInfo/1o2p241e/obj/arm64-v8a/libserious_python.so",
+      "runtimeFiles": []
+    }
+  }
+}
