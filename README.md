@@ -270,9 +270,41 @@ Or an Android App Bundle (AAB):
 
 If you prefer plain `flet build`, set the same environment variables first (see **12. Troubleshooting** below).
 
-After the build completes, Flet will create an output directory (typically something like `build/android`). Inside you will find:
-   - `*.apk` files
-   - optionally, `*.aab` files
+After the build completes, Flet writes artifacts under the project root, commonly:
+
+- **`build/apk/`** – installable APK (name follows `[project].name` in `pyproject.toml`, e.g. `flet-bluetooth-prototype.apk`)
+- **`build/aab/`** – Android App Bundle, if you built with `build aab`
+- Other Flutter/Flet intermediates may appear under `build/` (exact layout can vary with Flet version)
+
+### 8.1 Typical dev loop: uninstall, build, install
+
+From the project root, with the venv active, a single line often used for **clean rebuild + reinstall** on a device or emulator already visible to `adb`:
+
+```bash
+adb uninstall com.flet.flet_bluetooth_prototype && ./scripts/flet-with-cert.sh build apk --clear-cache && adb install -r "build/apk/flet-bluetooth-prototype.apk"
+```
+
+What each part does:
+
+| Step | Command | Purpose |
+|------|---------|--------|
+| Uninstall | `adb uninstall com.flet.flet_bluetooth_prototype` | Removes the previous install so signatures/cache issues are avoided. If the app was never installed, `adb` may report *Failure*; that is normal. |
+| Build | `./scripts/flet-with-cert.sh build apk --clear-cache` | Builds the APK using the macOS SSL helper (see **12. Troubleshooting**) and `--clear-cache` to force a clean Flet/Flutter build when needed. |
+| Install | `adb install -r "build/apk/flet-bluetooth-prototype.apk"` | Reinstalls the APK (`-r` replaces an existing app). |
+
+Adjust the **package name** and **APK filename** if you change `name` / Android settings in `pyproject.toml` (the application id is derived by Flet from the project).
+
+On **Windows**, run the same `adb` commands from PowerShell or CMD; use `flet build apk --clear-cache` after setting `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` (see **12. Troubleshooting**) instead of `./scripts/flet-with-cert.sh`, unless you use Git Bash for the script.
+
+Shorter variants:
+
+```bash
+# Build only (no uninstall)
+./scripts/flet-with-cert.sh build apk --clear-cache
+
+# Install the APK built above (path may match your `pyproject.toml` project name)
+adb install -r "build/apk/flet-bluetooth-prototype.apk"
+```
 
 ---
 
@@ -293,7 +325,13 @@ In Device Manager, click the **Run** (play) icon next to your AVD to start it.
 
 ### 9.3. Install your APK on the emulator
 
-From your project root, once you have an APK (e.g. `build/android/app-release.apk`):
+From your project root, once you have an APK (for this repo, often `build/apk/flet-bluetooth-prototype.apk` after `./scripts/flet-with-cert.sh build apk`):
+
+```bash
+adb install -r "build/apk/flet-bluetooth-prototype.apk"
+```
+
+Or use any APK path:
 
 ```bash
 adb install -r path/to/your.apk
@@ -334,7 +372,13 @@ You should see a device ID listed as `device`.
 
 ### 10.3. Install the APK
 
-From the project root:
+From the project root (example for this project’s default APK name):
+
+```bash
+adb install -r "build/apk/flet-bluetooth-prototype.apk"
+```
+
+Generic form:
 
 ```bash
 adb install -r path/to/your.apk
