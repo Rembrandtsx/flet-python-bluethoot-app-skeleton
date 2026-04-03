@@ -104,6 +104,8 @@ async def main(page: ft.Page) -> None:
     _log_lines: list[str] = []
 
     route_holder: list[str] = ["login"]
+    sensor_connected: list[bool] = [False]
+    pairing_scan_task: list[Optional[asyncio.Task]] = [None]
     session_email: list[str] = [""]
     condition_selected: list[str] = [""]
     crisis_shown: list[bool] = [False]
@@ -141,6 +143,19 @@ async def main(page: ft.Page) -> None:
         size=13,
         weight=ft.FontWeight.W_500,
         color=fsui.C_GREY,
+    )
+    bpm_hero = ft.Text(
+        "—",
+        size=72,
+        weight=ft.FontWeight.W_700,
+        color=fsui.C_PAIRING_TEAL,
+        text_align=ft.TextAlign.CENTER,
+    )
+    bpm_hero_sub = ft.Text(
+        "BPM",
+        size=15,
+        color=fsui.C_GREY_LIGHT,
+        text_align=ft.TextAlign.CENTER,
     )
 
     debug_log = ft.ListView(
@@ -342,6 +357,7 @@ async def main(page: ft.Page) -> None:
     async def connect_click(_) -> None:
         nonlocal ble_thread, android_disconnect, rx_count
         app_log_ui("conectar: nueva sesión")
+        sensor_connected[0] = False
         if is_android() and not use_pyjnius_ble and ble_bridge is not None:
             try:
                 await ble_bridge.disconnect_ble()
@@ -392,6 +408,9 @@ async def main(page: ft.Page) -> None:
                     return
                 if not ok:
                     _open_snackbar(page, "No se pudo conectar al sensor.")
+                    sensor_connected[0] = False
+                else:
+                    sensor_connected[0] = True
                 page.update()
                 return
             try:
@@ -412,6 +431,7 @@ async def main(page: ft.Page) -> None:
                 app_log_ui(f"Pyjnius ({exc})")
                 page.update()
                 return
+            sensor_connected[0] = True
             page.update()
             return
 
@@ -419,6 +439,7 @@ async def main(page: ft.Page) -> None:
             on_status(msg)
 
         ble_thread = start_ble_desktop(stop_event, data_queue, status_sync, on_debug=app_log)
+        sensor_connected[0] = True
         connected_text.value = "Sensor: escritorio (Bleak)"
         page.update()
 
@@ -437,8 +458,11 @@ async def main(page: ft.Page) -> None:
                 pass
             android_disconnect = None
         ble_thread = None
+        sensor_connected[0] = False
         status_text.value = "Estado: desconectado"
         connected_text.value = "Sensor: no conectado"
+        if route_holder[0] == "home":
+            body_holder.content = build_home()
         page.update()
 
     def cancel_crisis_timer() -> None:
@@ -673,7 +697,131 @@ async def main(page: ft.Page) -> None:
             on_logo_secret_tap=on_logo_secret_easter,
         )
 
+    def _cancel_pairing_scan_task() -> None:
+        t = pairing_scan_task[0]
+        if t is not None and not t.done():
+            t.cancel()
+        pairing_scan_task[0] = None
+
+    def _go_pairing_error() -> None:
+        _cancel_pairing_scan_task()
+        route_holder[0] = "pairing_error"
+        body_holder.content = build_pairing_error()
+        page.update()
+
+    async def run_pairing_scan_sequence() -> None:
+        try:
+            await asyncio.sleep(1.0)
+            if route_holder[0] != "pairing_scan":
+                return
+            if not is_android():
+                await connect_click(None)
+                if sensor_connected[0]:
+                    route_holder[0] = "home"
+                    body_holder.content = build_home()
+                    page.update()
+                else:
+                    _go_pairing_error()
+                return
+            if not await ensure_bt_permissions():
+                _go_pairing_error()
+                return
+            await scan_devices(None)
+            if not device_list.options:
+                _go_pairing_error()
+                return
+            o0 = device_list.options[0]
+            device_list.value = (o0.key or o0.text or "").strip()
+            await connect_click(None)
+            if sensor_connected[0]:
+                route_holder[0] = "home"
+                body_holder.content = build_home()
+                page.update()
+            else:
+                _go_pairing_error()
+        except asyncio.CancelledError:
+            pass
+
+    async def pairing_open_intro(_) -> None:
+        _cancel_pairing_scan_task()
+        route_holder[0] = "pairing_intro"
+        body_holder.content = build_pairing_intro()
+        page.update()
+
+    async def pairing_intro_back(_) -> None:
+        _cancel_pairing_scan_task()
+        route_holder[0] = "home"
+        body_holder.content = build_home()
+        page.update()
+
+    async def pairing_intro_start(_) -> None:
+        route_holder[0] = "pairing_prepare"
+        body_holder.content = build_pairing_prepare()
+        page.update()
+
+    async def pairing_prepare_back(_) -> None:
+        route_holder[0] = "pairing_intro"
+        body_holder.content = build_pairing_intro()
+        page.update()
+
+    async def pairing_prepare_continue(_) -> None:
+        route_holder[0] = "pairing_scan"
+        body_holder.content = build_pairing_scan()
+        page.update()
+        _cancel_pairing_scan_task()
+        pairing_scan_task[0] = asyncio.create_task(run_pairing_scan_sequence())
+
+    async def pairing_scan_back(_) -> None:
+        _cancel_pairing_scan_task()
+        route_holder[0] = "pairing_prepare"
+        body_holder.content = build_pairing_prepare()
+        page.update()
+
+    async def pairing_error_retry(_) -> None:
+        await pairing_prepare_continue(None)
+
+    async def pairing_error_back(_) -> None:
+        _cancel_pairing_scan_task()
+        route_holder[0] = "home"
+        body_holder.content = build_home()
+        page.update()
+
+    def build_pairing_intro() -> ft.Control:
+        return fsui.screen_pairing_intro(pairing_intro_start, pairing_intro_back)
+
+    def build_pairing_prepare() -> ft.Control:
+        return fsui.screen_pairing_prepare(pairing_prepare_continue, pairing_prepare_back)
+
+    def build_pairing_scan() -> ft.Control:
+        return fsui.screen_pairing_scan(pairing_scan_back)
+
+    def build_pairing_error() -> ft.Control:
+        return fsui.screen_pairing_error(pairing_error_retry, pairing_error_back)
+
+    def build_resolved() -> ft.Control:
+        return fsui.screen_resolved(resolved_to_home)
+
+    def build_crisis() -> ft.Control:
+        return fsui.screen_crisis(crisis_timer_text, crisis_cancel_click)
+
+    def enter_crisis_flow() -> None:
+        crisis_remaining[0] = 180
+        crisis_timer_text.value = "3:00"
+        route_holder[0] = "crisis"
+        crisis_shown[0] = True
+        body_holder.content = build_crisis()
+        cancel_crisis_timer()
+        crisis_task_ref[0] = asyncio.create_task(crisis_countdown())
+        _open_snackbar(page, "FallSense: posible episodio — revisa la pantalla.")
+        page.update()
+
+    def notify_crisis_click(_):
+        enter_crisis_flow()
+
     def build_home() -> ft.Control:
+        if not sensor_connected[0]:
+            return fsui.screen_home_empty(pairing_open_intro)
+
         sub = (
             f"{session_email[0]} · Condición: {condition_selected[0] or '—'}"
             if session_email[0]
@@ -695,29 +843,47 @@ async def main(page: ft.Page) -> None:
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             spacing=8,
         )
-        connection_card = fsui.card(
-            "Conexión del sensor",
-            ft.Column(
+        connection_row = fsui.card(
+            "Sensor",
+            ft.Row(
                 [
-                    status_text,
-                    ft.Container(height=8),
-                    scan_btn if is_android() else ft.Text("Escritorio: pulsa Conectar.", size=12),
-                    device_list,
-                    ft.Row(
-                        [connect_btn, disconnect_btn],
-                        wrap=True,
-                        spacing=8,
+                    ft.Column(
+                        [
+                            status_text,
+                            ft.Text(
+                                "Datos en vivo por Bluetooth",
+                                size=12,
+                                color=fsui.C_GREY_LIGHT,
+                            ),
+                        ],
+                        expand=True,
+                        tight=True,
                     ),
+                    disconnect_btn,
                 ],
-                spacing=6,
+                vertical_alignment=ft.CrossAxisAlignment.CENTER,
+            ),
+        )
+        bpm_block = ft.Container(
+            padding=ft.padding.symmetric(vertical=20, horizontal=16),
+            bgcolor=fsui.C_WHITE,
+            border_radius=20,
+            border=ft.border.all(1, fsui.C_BORDER),
+            content=ft.Column(
+                [
+                    bpm_hero,
+                    bpm_hero_sub,
+                    status_msg,
+                ],
+                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+                spacing=4,
                 tight=True,
             ),
         )
         vitals_card = fsui.card(
-            "Signos vitales y movimiento",
+            "Sensores y movimiento",
             ft.Column(
                 [
-                    status_msg,
                     ft.Row(
                         [
                             ft.Column(
@@ -730,7 +896,7 @@ async def main(page: ft.Page) -> None:
                     move_text,
                     alert_text,
                     live_sensor_text,
-                    ft.Row([override_btn, reset_detect_btn], wrap=True),
+                    reset_detect_btn,
                 ],
                 spacing=6,
                 tight=True,
@@ -740,29 +906,37 @@ async def main(page: ft.Page) -> None:
             "PPG (plethysmograph)",
             ft.Column([chart_caption, chart_host], tight=True),
         )
+        crisis_row = ft.Container(
+            padding=ft.padding.only(top=4),
+            content=ft.OutlinedButton(
+                content=ft.Row(
+                    [
+                        ft.Icon(ft.Icons.NOTIFICATIONS_ACTIVE, color=fsui.C_RED_ALERT),
+                        ft.Text(
+                            "Notificar crisis",
+                            size=15,
+                            weight=ft.FontWeight.W_600,
+                            color=fsui.C_RED_ALERT,
+                        ),
+                    ],
+                    tight=True,
+                ),
+                on_click=notify_crisis_click,
+                style=ft.ButtonStyle(
+                    padding=ft.padding.symmetric(horizontal=20, vertical=16),
+                ),
+            ),
+        )
         return fsui.screen_home_shell(
             header,
-            connection_card,
+            ft.Column(
+                [connection_row, bpm_block, crisis_row],
+                spacing=12,
+                tight=True,
+            ),
             vitals_card,
             chart_block,
         )
-
-    def build_resolved() -> ft.Control:
-        return fsui.screen_resolved(resolved_to_home)
-
-    def build_crisis() -> ft.Control:
-        return fsui.screen_crisis(crisis_timer_text, crisis_cancel_click)
-
-    def enter_crisis_flow() -> None:
-        crisis_remaining[0] = 180
-        crisis_timer_text.value = "3:00"
-        route_holder[0] = "crisis"
-        crisis_shown[0] = True
-        body_holder.content = build_crisis()
-        cancel_crisis_timer()
-        crisis_task_ref[0] = asyncio.create_task(crisis_countdown())
-        _open_snackbar(page, "FallSense: posible episodio — revisa la pantalla.")
-        page.update()
 
     scan_btn = ft.Button(
         "Buscar dispositivos BLE",
@@ -855,7 +1029,7 @@ async def main(page: ft.Page) -> None:
                         )
 
             if route_holder[0] in ("home", "debug"):
-                status_msg_val, alert_val, moving, _bpm_shown, _ = step_ui_state(
+                status_msg_val, alert_val, moving, bpm_shown, _ = step_ui_state(
                     state, now
                 )
                 status_msg.value = status_msg_val
@@ -869,6 +1043,12 @@ async def main(page: ft.Page) -> None:
                     else fsui.C_GREY
                 )
                 chart_host.controls[0] = _sparkline(state.ir_buffer)
+
+                if route_holder[0] == "home" and sensor_connected[0]:
+                    if state.finger_detected and bpm_shown > 0:
+                        bpm_hero.value = f"{bpm_shown:.0f}"
+                    else:
+                        bpm_hero.value = "—"
 
                 if (
                     route_holder[0] == "home"
