@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any, Callable, Optional
+
 import flet as ft
 
 # —— Palette (Figma-inspired) ——
@@ -106,14 +108,22 @@ def screen_login(
     err: ft.Text,
     on_login,
     on_register,
+    *,
+    on_logo_secret_tap: Optional[Callable[..., Any]] = None,
 ) -> ft.Control:
+    logo = logo_block()
+    if on_logo_secret_tap is not None:
+        logo = ft.Container(
+            content=logo,
+            on_click=on_logo_secret_tap,
+        )
     return ft.Container(
         expand=True,
         bgcolor=C_WHITE,
         padding=ft.padding.symmetric(horizontal=28, vertical=32),
         content=ft.Column(
             [
-                logo_block(),
+                logo,
                 ft.Container(height=28),
                 ft.Text(
                     "Inicia sesión para continuar",
@@ -200,7 +210,6 @@ def screen_home_shell(
     connection_card: ft.Control,
     vitals_card: ft.Control,
     chart_block: ft.Control,
-    debug_block: ft.Control,
 ) -> ft.Control:
     return ft.Container(
         expand=True,
@@ -215,8 +224,6 @@ def screen_home_shell(
                 vitals_card,
                 ft.Container(height=12),
                 chart_block,
-                ft.Container(height=8),
-                debug_block,
             ],
             scroll=ft.ScrollMode.AUTO,
             spacing=0,

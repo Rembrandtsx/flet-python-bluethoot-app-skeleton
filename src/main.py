@@ -26,7 +26,7 @@ from esp32_sensor import (
     TARGET_NAME,
     SensorState,
     apply_sample,
-    parse_sensor_payload,
+    normalize_payload,
     step_ui_state,
 )
 import fallsense_ui as fsui
@@ -130,6 +130,18 @@ async def main(page: ft.Page) -> None:
     rx_counter_text = ft.Text("RX: 0", size=12, color=fsui.C_GREY_LIGHT)
     last_parsed_text = ft.Text("Último dato: —", size=12, color=fsui.C_GREY_700)
     live_sensor_text = ft.Text("", size=12, color=fsui.C_GREY)
+    hw_mpu_text = ft.Text(
+        "Acelerómetro (MPU): —",
+        size=13,
+        weight=ft.FontWeight.W_500,
+        color=fsui.C_GREY,
+    )
+    hw_max_text = ft.Text(
+        "MAX30102 (PPG): —",
+        size=13,
+        weight=ft.FontWeight.W_500,
+        color=fsui.C_GREY,
+    )
 
     debug_log = ft.ListView(
         height=180,
@@ -349,6 +361,12 @@ async def main(page: ft.Page) -> None:
         rx_counter_text.value = "RX: 0"
         last_parsed_text.value = "Último dato: —"
         live_sensor_text.value = ""
+        state.mpu_hw_ok = None
+        state.max_hw_ok = None
+        hw_mpu_text.value = "Acelerómetro (MPU): —"
+        hw_max_text.value = "MAX30102 (PPG): —"
+        hw_mpu_text.color = fsui.C_GREY
+        hw_max_text.color = fsui.C_GREY
         debug_log.controls = [ft.Text("—", size=12, color=ft.Colors.GREY_600)]
         page.update()
         while not data_queue.empty():
@@ -493,15 +511,6 @@ async def main(page: ft.Page) -> None:
             "Registro: no implementado en este prototipo. Usa Iniciar sesión con cualquier contraseña.",
         )
 
-    def build_login() -> ft.Control:
-        return fsui.screen_login(
-            login_email,
-            login_password,
-            login_err,
-            do_login,
-            do_register,
-        )
-
     def _condition_options() -> list[ft.Control]:
         opts = []
         sel = condition_selected[0] if condition_selected else ""
@@ -553,14 +562,9 @@ async def main(page: ft.Page) -> None:
             do_condition_continue,
         )
 
-    async def open_debug_page(_) -> None:
-        route_holder[0] = "debug"
-        body_holder.content = build_debug()
-        page.update()
-
     async def close_debug_page(_) -> None:
-        route_holder[0] = "home"
-        body_holder.content = build_home()
+        route_holder[0] = "login"
+        body_holder.content = build_login()
         page.update()
 
     def build_debug() -> ft.Control:
@@ -575,7 +579,7 @@ async def main(page: ft.Page) -> None:
                         [
                             ft.IconButton(
                                 icon=ft.Icons.ARROW_BACK,
-                                tooltip="Volver al monitor",
+                                tooltip="Volver al inicio de sesión",
                                 on_click=close_debug_page,
                             ),
                             ft.Text(
@@ -592,6 +596,11 @@ async def main(page: ft.Page) -> None:
                         "PPG / crisis (ESP32 BLE) — vista técnica",
                         size=12,
                         color=fsui.C_GREY,
+                    ),
+                    ft.Text(
+                        "Formato ESP32: MPU:OK|FAIL,MAX:OK|FAIL,AX..GZ,IR,BPM",
+                        size=11,
+                        color=fsui.C_GREY_LIGHT,
                     ),
                     ft.Divider(height=1, color=ft.Colors.GREY_400),
                     status_text,
@@ -611,6 +620,8 @@ async def main(page: ft.Page) -> None:
                     connected_text,
                     rx_counter_text,
                     last_parsed_text,
+                    hw_mpu_text,
+                    hw_max_text,
                     live_sensor_text,
                     reset_detect_btn,
                     ft.Divider(height=1, color=ft.Colors.GREY_400),
@@ -631,6 +642,35 @@ async def main(page: ft.Page) -> None:
                 spacing=10,
                 scroll=ft.ScrollMode.AUTO,
             ),
+        )
+
+    _logo_secret_taps: list[int] = [0]
+    _logo_secret_last: list[float] = [0.0]
+    _LOGO_SECRET_GAP_S = 4.0
+
+    async def on_logo_secret_easter(_) -> None:
+        """Hidden: tap the login logo 5 times within a few seconds to open BLE debug."""
+        now = time.time()
+        if now - _logo_secret_last[0] > _LOGO_SECRET_GAP_S:
+            _logo_secret_taps[0] = 0
+        _logo_secret_last[0] = now
+        _logo_secret_taps[0] += 1
+        if _logo_secret_taps[0] < 5:
+            return
+        _logo_secret_taps[0] = 0
+        route_holder[0] = "debug"
+        body_holder.content = build_debug()
+        page.update()
+        app_log_ui("Depuración: acceso oculto (logo ×5)")
+
+    def build_login() -> ft.Control:
+        return fsui.screen_login(
+            login_email,
+            login_password,
+            login_err,
+            do_login,
+            do_register,
+            on_logo_secret_tap=on_logo_secret_easter,
         )
 
     def build_home() -> ft.Control:
@@ -678,6 +718,15 @@ async def main(page: ft.Page) -> None:
             ft.Column(
                 [
                     status_msg,
+                    ft.Row(
+                        [
+                            ft.Column(
+                                [hw_mpu_text, hw_max_text],
+                                spacing=4,
+                                tight=True,
+                            ),
+                        ],
+                    ),
                     move_text,
                     alert_text,
                     live_sensor_text,
@@ -691,31 +740,11 @@ async def main(page: ft.Page) -> None:
             "PPG (plethysmograph)",
             ft.Column([chart_caption, chart_host], tight=True),
         )
-        debug_nav_btn = ft.OutlinedButton(
-            content=ft.Row(
-                [
-                    ft.Icon(ft.Icons.BUG_REPORT_OUTLINED, size=20, color=fsui.C_TEAL),
-                    ft.Text(
-                        "Abrir depuración BLE (vista técnica completa)",
-                        size=14,
-                        color=fsui.C_BLUE_DARK,
-                    ),
-                ],
-                spacing=8,
-                tight=True,
-            ),
-            on_click=open_debug_page,
-            style=ft.ButtonStyle(
-                padding=ft.padding.symmetric(horizontal=16, vertical=14),
-                side=ft.BorderSide(1, fsui.C_TEAL),
-            ),
-        )
         return fsui.screen_home_shell(
             header,
             connection_card,
             vitals_card,
             chart_block,
-            debug_nav_btn,
         )
 
     def build_resolved() -> ft.Control:
@@ -786,13 +815,7 @@ async def main(page: ft.Page) -> None:
                     if len(debug_log.controls) > 30:
                         debug_log.controls.pop(0)
 
-                parsed = None
-                if isinstance(raw, dict):
-                    parsed = raw
-                elif isinstance(raw, str):
-                    parsed = parse_sensor_payload(raw)
-                else:
-                    parsed = parse_sensor_payload(str(raw))
+                parsed = normalize_payload(raw)
 
                 if parsed:
                     apply_sample(state, parsed, now)
@@ -801,13 +824,35 @@ async def main(page: ft.Page) -> None:
                     ax = float(parsed.get("AX", 0.0))
                     ay = float(parsed.get("AY", 0.0))
                     az = float(parsed.get("AZ", 0.0))
+                    gx = float(parsed.get("GX", 0.0))
+                    gy = float(parsed.get("GY", 0.0))
+                    gz = float(parsed.get("GZ", 0.0))
                     ir_v = float(parsed.get("IR", 0.0))
                     bpm_v = float(parsed.get("BPM", 0.0))
                     mag = (ax * ax + ay * ay + az * az) ** 0.5
+                    gyro_part = (
+                        f" · GX {gx:.2f} · GY {gy:.2f} · GZ {gz:.2f}"
+                        if any(k in parsed for k in ("GX", "GY", "GZ"))
+                        else ""
+                    )
                     live_sensor_text.value = (
-                        f"AX {ax:.2f} · AY {ay:.2f} · AZ {az:.2f} · |A| {mag:.2f} · "
+                        f"AX {ax:.2f} · AY {ay:.2f} · AZ {az:.2f} · |A| {mag:.2f}{gyro_part} · "
                         f"IR {ir_v:.0f} · BPM {bpm_v:.1f} (dedo si IR>{IR_THRESHOLD})"
                     )
+                    if state.mpu_hw_ok is not None:
+                        hw_mpu_text.value = (
+                            f"Acelerómetro (MPU): {'OK' if state.mpu_hw_ok else 'Fallo'}"
+                        )
+                        hw_mpu_text.color = (
+                            fsui.C_TEAL if state.mpu_hw_ok else fsui.C_RED_ALERT
+                        )
+                    if state.max_hw_ok is not None:
+                        hw_max_text.value = (
+                            f"MAX30102 (PPG): {'OK' if state.max_hw_ok else 'Fallo'}"
+                        )
+                        hw_max_text.color = (
+                            fsui.C_TEAL if state.max_hw_ok else fsui.C_RED_ALERT
+                        )
 
             if route_holder[0] in ("home", "debug"):
                 status_msg_val, alert_val, moving, _bpm_shown, _ = step_ui_state(

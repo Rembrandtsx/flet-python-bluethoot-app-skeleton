@@ -1,7 +1,13 @@
 """
 ESP32 biosensor protocol and UI state (ported from inter_corregida.py).
 
-BLE characteristic sends UTF-8 text like: AX:0.1,AY:0.2,AZ:0.3,IR:12345,BPM:72
+BLE characteristic sends UTF-8 text, e.g.:
+
+  MPU:OK,MAX:OK,AX:0.1,AY:0.2,AZ:9.5,GX:0.0,GY:0.0,GZ:0.0,IR:12345,BPM:72.0
+
+Legacy format without MPU/MAX prefixes is still accepted:
+
+  AX:0.1,AY:0.2,AZ:0.3,IR:12345,BPM:72
 """
 
 from __future__ import annotations
@@ -24,14 +30,16 @@ class SensorState:
     alert_text: str = "OK"
     manual_override: bool = False
     finger_detected: bool = False
+    mpu_hw_ok: bool | None = None
+    max_hw_ok: bool | None = None
 
 
-def parse_sensor_payload(text: str) -> dict[str, float] | None:
-    """Parse one notification string into a dict of floats."""
+def parse_sensor_payload(text: str) -> dict[str, object] | None:
+    """Parse one notification string: MPU/MAX OK|FAIL plus numeric AX..GZ, IR, BPM."""
     text = text.strip()
     if not text:
         return None
-    values: dict[str, float] = {}
+    values: dict[str, object] = {}
     try:
         for item in text.split(","):
             item = item.strip()
@@ -44,15 +52,34 @@ def parse_sensor_payload(text: str) -> dict[str, float] | None:
             else:
                 continue
             k_norm = k.strip().upper()
-            values[k_norm] = float(v.strip())
+            v = v.strip()
+            if k_norm == "MPU":
+                values["MPU_OK"] = v.upper() == "OK"
+            elif k_norm == "MAX":
+                values["MAX_OK"] = v.upper() == "OK"
+            else:
+                values[k_norm] = float(v)
     except (ValueError, TypeError):
         return None
     return values if values else None
 
 
+def normalize_payload(raw: object) -> dict[str, object] | None:
+    """Accept str or flat dict from BLE and return the same shape as parse_sensor_payload."""
+    if isinstance(raw, str):
+        return parse_sensor_payload(raw)
+    if isinstance(raw, dict):
+        try:
+            flat = ",".join(f"{k}:{v}" for k, v in raw.items())
+            return parse_sensor_payload(flat)
+        except (TypeError, ValueError):
+            return None
+    return parse_sensor_payload(str(raw))
+
+
 def apply_sample(
     state: SensorState,
-    d: dict[str, float],
+    d: dict[str, object],
     now: float,
 ) -> None:
     ax = float(d.get("AX", 0.0))
@@ -60,8 +87,13 @@ def apply_sample(
     az = float(d.get("AZ", 0.0))
     ir = float(d.get("IR", 0.0))
 
+    if "MPU_OK" in d and isinstance(d["MPU_OK"], bool):
+        state.mpu_hw_ok = d["MPU_OK"]
+    if "MAX_OK" in d and isinstance(d["MAX_OK"], bool):
+        state.max_hw_ok = d["MAX_OK"]
+
     if "BPM" in d:
-        state.bpm_display = float(d["BPM"])
+        state.bpm_display = float(d["BPM"])  # type: ignore[arg-type]
 
     state.ir_buffer.append(ir)
     state.time_buffer.append(now)
@@ -101,7 +133,7 @@ def step_ui_state(state: SensorState, _now: float) -> tuple[str, str, bool, floa
     alert_text = "OK"
     if bpm_shown < 60 and state.finger_detected:
         alert_text = "⚠️ Bradicardia"
-    elif bpm_shown > 190:
+    elif bpm_shown > 120:
         alert_text = "🚨 Taquicardia"
 
     if bpm_shown > 150 and not moving:
