@@ -1,0 +1,1 @@
+C:\Users\nssf2\Downloads\flet-python-bluethoot-app-skeleton\packages\serious_python_android_arm_only\src\CMakeLists.txt

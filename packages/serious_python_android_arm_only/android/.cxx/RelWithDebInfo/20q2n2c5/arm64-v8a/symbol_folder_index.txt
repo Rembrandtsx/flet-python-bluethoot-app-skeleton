@@ -1,0 +1,1 @@
+C:\Users\nssf2\Downloads\flet-python-bluethoot-app-skeleton\build\flutter\build\serious_python_android\intermediates\cxx\RelWithDebInfo\20q2n2c5\obj\arm64-v8a

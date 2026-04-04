@@ -1,0 +1,60 @@
+{
+	"configurations" : 
+	[
+		{
+			"directories" : 
+			[
+				{
+					"build" : ".",
+					"jsonFile" : "directory-.-RelWithDebInfo-d0094a50bb2071803777.json",
+					"minimumCMakeVersion" : 
+					{
+						"string" : "3.6.0"
+					},
+					"projectIndex" : 0,
+					"source" : ".",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"name" : "RelWithDebInfo",
+			"projects" : 
+			[
+				{
+					"directoryIndexes" : 
+					[
+						0
+					],
+					"name" : "serious_python_library",
+					"targetIndexes" : 
+					[
+						0
+					]
+				}
+			],
+			"targets" : 
+			[
+				{
+					"directoryIndex" : 0,
+					"id" : "serious_python::@6890427a1f51a3e7e1df",
+					"jsonFile" : "target-serious_python-RelWithDebInfo-0341f56f46c6863a6b20.json",
+					"name" : "serious_python",
+					"projectIndex" : 0
+				}
+			]
+		}
+	],
+	"kind" : "codemodel",
+	"paths" : 
+	{
+		"build" : "C:/Users/nssf2/Downloads/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/android/.cxx/RelWithDebInfo/20q2n2c5/armeabi-v7a",
+		"source" : "C:/Users/nssf2/Downloads/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/src"
+	},
+	"version" : 
+	{
+		"major" : 2,
+		"minor" : 3
+	}
+}

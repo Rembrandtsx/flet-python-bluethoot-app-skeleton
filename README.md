@@ -268,6 +268,26 @@ Or an Android App Bundle (AAB):
 ./scripts/flet-with-cert.sh build aab
 ```
 
+On **Windows** (PowerShell, from the project root), use the helper script (same behavior as `flet-with-cert.sh`: optional `.venv` activation, SSL env vars from `certifi`, then `flet_with_ble_gatt.py`):
+
+```powershell
+.\scripts\flet-with-cert.ps1 build apk
+```
+
+Android App Bundle (AAB):
+
+```powershell
+.\scripts\flet-with-cert.ps1 build aab
+```
+
+**One-liner** without invoking the script file (paste in PowerShell from the project root; venv must be active if you rely on it for `python` / `certifi`):
+
+```powershell
+$env:SSL_CERT_FILE=(python -c "import certifi; print(certifi.where())").Trim();$env:REQUESTS_CA_BUNDLE=$env:SSL_CERT_FILE;python scripts\flet_with_ble_gatt.py build apk
+```
+
+In **Git Bash** on Windows you can run `./scripts/flet-with-cert.sh` the same way as on macOS if the script is executable.
+
 If you prefer plain `flet build`, set the same environment variables first (see **12. Troubleshooting** below).
 
 After the build completes, Flet writes artifacts under the project root, commonly:
@@ -284,19 +304,25 @@ From the project root, with the venv active, a single line often used for **clea
 adb uninstall com.flet.flet_bluetooth_prototype && ./scripts/flet-with-cert.sh build apk --clear-cache && adb install -r "build/apk/flet-bluetooth-prototype.apk"
 ```
 
+**Windows** (PowerShell **one-liner** — uninstall, clean build, reinstall):
+
+```powershell
+adb uninstall com.flet.flet_bluetooth_prototype; .\scripts\flet-with-cert.ps1 build apk --clear-cache; adb install -r "build\apk\flet-bluetooth-prototype.apk"
+```
+
 What each part does:
 
 | Step | Command | Purpose |
 |------|---------|--------|
 | Uninstall | `adb uninstall com.flet.flet_bluetooth_prototype` | Removes the previous install so signatures/cache issues are avoided. If the app was never installed, `adb` may report *Failure*; that is normal. |
-| Build | `./scripts/flet-with-cert.sh build apk --clear-cache` | Builds the APK using the macOS SSL helper (see **12. Troubleshooting**) and `--clear-cache` to force a clean Flet/Flutter build when needed. |
+| Build | `./scripts/flet-with-cert.sh build apk --clear-cache` (macOS/Linux/Git Bash) or `.\scripts\flet-with-cert.ps1 build apk --clear-cache` (Windows) | Builds the APK with SSL env vars and the BleGatt wrapper (see **12. Troubleshooting**); `--clear-cache` forces a clean Flet/Flutter build when needed. |
 | Install | `adb install -r "build/apk/flet-bluetooth-prototype.apk"` | Reinstalls the APK (`-r` replaces an existing app). |
 
 Adjust the **package name** and **APK filename** if you change `name` / Android settings in `pyproject.toml` (the application id is derived by Flet from the project).
 
-On **Windows**, run the same `adb` commands from PowerShell or CMD; use `flet build apk --clear-cache` after setting `SSL_CERT_FILE` / `REQUESTS_CA_BUNDLE` (see **12. Troubleshooting**) instead of `./scripts/flet-with-cert.sh`, unless you use Git Bash for the script.
+On **Windows**, use `.\scripts\flet-with-cert.ps1` (see **section 8**) so behavior matches `./scripts/flet-with-cert.sh`. Plain `flet build` skips the BleGatt wrapper unless you wire it another way.
 
-Shorter variants:
+Shorter variants (macOS/Linux):
 
 ```bash
 # Build only (no uninstall)
@@ -304,6 +330,13 @@ Shorter variants:
 
 # Install the APK built above (path may match your `pyproject.toml` project name)
 adb install -r "build/apk/flet-bluetooth-prototype.apk"
+```
+
+Shorter variants (**Windows** PowerShell):
+
+```powershell
+.\scripts\flet-with-cert.ps1 build apk --clear-cache
+adb install -r "build\apk\flet-bluetooth-prototype.apk"
 ```
 
 ---
@@ -325,7 +358,7 @@ In Device Manager, click the **Run** (play) icon next to your AVD to start it.
 
 ### 9.3. Install your APK on the emulator
 
-From your project root, once you have an APK (for this repo, often `build/apk/flet-bluetooth-prototype.apk` after `./scripts/flet-with-cert.sh build apk`):
+From your project root, once you have an APK (for this repo, often `build/apk/flet-bluetooth-prototype.apk` after `./scripts/flet-with-cert.sh build apk` or `.\scripts\flet-with-cert.ps1 build apk` on Windows):
 
 ```bash
 adb install -r "build/apk/flet-bluetooth-prototype.apk"
@@ -442,8 +475,12 @@ If you want to extend this:
     export REQUESTS_CA_BUNDLE="$SSL_CERT_FILE"
     flet build aab
     ```
+  - **Windows:** run `.\scripts\flet-with-cert.ps1 build apk` (or `build aab`) from the project root, or set the same variables in PowerShell before `flet …`:
+    ```powershell
+    $env:SSL_CERT_FILE=(python -c "import certifi; print(certifi.where())").Trim();$env:REQUESTS_CA_BUNDLE=$env:SSL_CERT_FILE
+    ```
 
-  The app entrypoint in `src/main.py` already sets these for **`python src/main.py`** / desktop runs; the CLI does not, so you must export or use `scripts/flet-with-cert.sh` for builds.
+  The app entrypoint in `src/main.py` already sets these for **`python src/main.py`** / desktop runs; the CLI does not, so you must export or use `scripts/flet-with-cert.sh` / `scripts\flet-with-cert.ps1` for builds.
 
   **If it still fails:** run Apple’s certificate installer for your Python, e.g. `/Applications/Python 3.12/Install Certificates.command`.
 

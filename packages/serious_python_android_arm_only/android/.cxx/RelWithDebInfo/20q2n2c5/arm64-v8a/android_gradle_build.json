@@ -1,0 +1,38 @@
+{
+  "buildFiles": [
+    "C:\\Users\\nssf2\\Downloads\\flet-python-bluethoot-app-skeleton\\packages\\serious_python_android_arm_only\\src\\CMakeLists.txt"
+  ],
+  "cleanCommandsComponents": [
+    [
+      "C:\\Users\\nssf2\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+      "-C",
+      "C:\\Users\\nssf2\\Downloads\\flet-python-bluethoot-app-skeleton\\packages\\serious_python_android_arm_only\\android\\.cxx\\RelWithDebInfo\\20q2n2c5\\arm64-v8a",
+      "clean"
+    ]
+  ],
+  "buildTargetsCommandComponents": [
+    "C:\\Users\\nssf2\\AppData\\Local\\Android\\Sdk\\cmake\\3.22.1\\bin\\ninja.exe",
+    "-C",
+    "C:\\Users\\nssf2\\Downloads\\flet-python-bluethoot-app-skeleton\\packages\\serious_python_android_arm_only\\android\\.cxx\\RelWithDebInfo\\20q2n2c5\\arm64-v8a",
+    "{LIST_OF_TARGETS_TO_BUILD}"
+  ],
+  "libraries": {
+    "serious_python::@6890427a1f51a3e7e1df": {
+      "toolchain": "toolchain",
+      "abi": "arm64-v8a",
+      "artifactName": "serious_python",
+      "output": "C:\\Users\\nssf2\\Downloads\\flet-python-bluethoot-app-skeleton\\build\\flutter\\build\\serious_python_android\\intermediates\\cxx\\RelWithDebInfo\\20q2n2c5\\obj\\arm64-v8a\\libserious_python.so",
+      "runtimeFiles": []
+    }
+  },
+  "toolchains": {
+    "toolchain": {
+      "cCompilerExecutable": "C:\\Users\\nssf2\\AppData\\Local\\Android\\Sdk\\ndk\\27.0.12077973\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang.exe",
+      "cppCompilerExecutable": "C:\\Users\\nssf2\\AppData\\Local\\Android\\Sdk\\ndk\\27.0.12077973\\toolchains\\llvm\\prebuilt\\windows-x86_64\\bin\\clang++.exe"
+    }
+  },
+  "cFileExtensions": [
+    "c"
+  ],
+  "cppFileExtensions": []
+}

@@ -10,7 +10,7 @@ visibility.
 
 Also appends ProGuard/R8 keep rules for the concrete class names.
 
-Use via ./scripts/flet-with-cert.sh (recommended) or:
+Use via ./scripts/flet-with-cert.sh (macOS/Linux), scripts\\flet-with-cert.ps1 (Windows), or:
   python scripts/flet_with_ble_gatt.py build apk
 """
 
@@ -37,6 +37,194 @@ _SRC_TEMPLATE = (
 
 _PROGUARD_MARKER = "# ble_gatt_bridge (Pyjnius)"
 
+_GRADLE_NET_MARKER = "# ble_gatt: gradle network patch"
+_GRADLE_STABILITY_MARKER = "# ble_gatt: gradle windows stability"
+_EXTRACT_ANN_WORKAROUND_MARKER = "// ble_gatt: extractReleaseAnnotations workaround"
+_MAVEN_CENTRAL_MIRROR = "https://maven-central.storage-download.googleapis.com/maven2/"
+
+
+def _read_flutter_sdk_path(flutter_dir: Path) -> Path | None:
+    lp = flutter_dir / "android" / "local.properties"
+    if not lp.is_file():
+        return None
+    for raw in lp.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if line.startswith("flutter.sdk="):
+            return Path(line.split("=", 1)[1].strip())
+    return None
+
+
+def _patch_flutter_tools_gradle_settings(flutter_sdk: Path) -> None:
+    """Patch Flutter's included :gradle composite build (its own settings.gradle.kts)."""
+    path = flutter_sdk / "packages" / "flutter_tools" / "gradle" / "settings.gradle.kts"
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if _MAVEN_CENTRAL_MIRROR in text:
+        return
+    needle = (
+        "        google()\n"
+        "        mavenCentral()\n"
+        "    }\n"
+        "}\n"
+    )
+    insert = (
+        "        google()\n"
+        "        maven {\n"
+        f'            url = uri("{_MAVEN_CENTRAL_MIRROR}")\n'
+        "        }\n"
+        "        mavenCentral()\n"
+        "    }\n"
+        "}\n"
+    )
+    if needle not in text:
+        return
+    path.write_text(text.replace(needle, insert, 1), encoding="utf-8")
+    print(f"ble_gatt_sync: Maven Central mirror (Flutter :gradle) -> {path}")
+
+
+def _patch_gradle_network(flutter_dir: Path) -> None:
+    """Help Gradle reach Kotlin/Maven artifacts (IPv4 + Google-hosted Maven Central mirror).
+
+    Some Windows networks fail HTTPS to repo.maven.apache.org; the Google mirror and
+    preferIPv4Stack often fix resolution for the Flutter :gradle included build.
+    """
+    android = flutter_dir / "android"
+    if not android.is_dir():
+        return
+
+    _patch_gradle_properties_network(android / "gradle.properties")
+    _patch_gradle_properties_stability(android / "gradle.properties")
+    _patch_settings_repositories(android / "settings.gradle.kts")
+    _patch_root_build_repositories(android / "build.gradle.kts")
+    _patch_build_gradle_extract_annotations_workaround(android / "build.gradle.kts")
+    sdk = _read_flutter_sdk_path(flutter_dir)
+    if sdk is not None:
+        _patch_flutter_tools_gradle_settings(sdk)
+
+
+def _patch_gradle_properties_network(path: Path) -> None:
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if _GRADLE_NET_MARKER in text:
+        return
+    flag = "-Djava.net.preferIPv4Stack=true"
+    lines: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if line.startswith("org.gradle.jvmargs=") and flag not in line:
+            line = line.rstrip("\r\n") + " " + flag + "\n"
+        lines.append(line)
+    out = "".join(lines).rstrip() + "\n"
+    out += f"\n{_GRADLE_NET_MARKER}\n"
+    out += "systemProp.java.net.preferIPv4Stack=true\n"
+    path.write_text(out, encoding="utf-8")
+    print(f"ble_gatt_sync: Gradle IPv4 / systemProp -> {path}")
+
+
+def _patch_gradle_properties_stability(path: Path) -> None:
+    """Reduce parallel/VFS races on Windows (connectivity_plus extractReleaseAnnotations)."""
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if _GRADLE_STABILITY_MARKER in text:
+        return
+    extra = (
+        f"\n{_GRADLE_STABILITY_MARKER}\n"
+        "org.gradle.parallel=false\n"
+        "org.gradle.configuration-cache=false\n"
+        "org.gradle.vfs.watch=false\n"
+    )
+    path.write_text(text.rstrip() + extra + "\n", encoding="utf-8")
+    print(f"ble_gatt_sync: Gradle stability (parallel/VFS) -> {path}")
+
+
+def _patch_build_gradle_extract_annotations_workaround(path: Path) -> None:
+    """Gradle 8.14 + AGP: typedefFile output missing -> doNotTrackState on extractReleaseAnnotations."""
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    new_block = """
+// ble_gatt: extractReleaseAnnotations workaround (Gradle 8.14 + Windows / connectivity_plus)
+gradle.beforeProject {
+    tasks.configureEach {
+        if (name.contains("extractReleaseAnnotations", ignoreCase = true)) {
+            doNotTrackState("ble_gatt: typedef output snapshot (Windows/AGP)")
+        }
+    }
+}
+"""
+    new_block = new_block.lstrip("\n")
+    old_block = """
+// ble_gatt: extractReleaseAnnotations workaround (Gradle 8.14 + Windows / connectivity_plus)
+subprojects {
+    afterEvaluate {
+        tasks.configureEach {
+            if (name.contains("extractReleaseAnnotations", ignoreCase = true)) {
+                doNotTrackState("ble_gatt: typedef output snapshot (Windows/AGP)")
+            }
+        }
+    }
+}
+"""
+    old_block = old_block.lstrip("\n")
+    norm = text.replace("\r\n", "\n")
+    if old_block in norm:
+        path.write_text(norm.replace(old_block, new_block, 1), encoding="utf-8")
+        print(f"ble_gatt_sync: extractReleaseAnnotations workaround (beforeProject) -> {path}")
+        return
+    if _EXTRACT_ANN_WORKAROUND_MARKER in text and "gradle.beforeProject" in text:
+        return
+    if _EXTRACT_ANN_WORKAROUND_MARKER in text:
+        return
+    path.write_text(text.rstrip() + "\n" + new_block, encoding="utf-8")
+    print(f"ble_gatt_sync: extractReleaseAnnotations workaround -> {path}")
+
+
+def _patch_settings_repositories(path: Path) -> None:
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if _MAVEN_CENTRAL_MIRROR in text:
+        return
+    needle = (
+        "        google()\n"
+        "        mavenCentral()\n"
+        "        gradlePluginPortal()\n"
+    )
+    insert = (
+        "        google()\n"
+        "        maven {\n"
+        f'            url = uri("{_MAVEN_CENTRAL_MIRROR}")\n'
+        "        }\n"
+        "        mavenCentral()\n"
+        "        gradlePluginPortal()\n"
+    )
+    if needle not in text:
+        return
+    path.write_text(text.replace(needle, insert, 1), encoding="utf-8")
+    print(f"ble_gatt_sync: Maven Central mirror (pluginManagement) -> {path}")
+
+
+def _patch_root_build_repositories(path: Path) -> None:
+    if not path.is_file():
+        return
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if _MAVEN_CENTRAL_MIRROR in text:
+        return
+    needle = "        google()\n        mavenCentral()\n"
+    insert = (
+        "        google()\n"
+        "        maven {\n"
+        f'            url = uri("{_MAVEN_CENTRAL_MIRROR}")\n'
+        "        }\n"
+        "        mavenCentral()\n"
+    )
+    if needle not in text:
+        return
+    path.write_text(text.replace(needle, insert, 1), encoding="utf-8")
+    print(f"ble_gatt_sync: Maven Central mirror (allprojects) -> {path}")
+
 
 def _write_ble_package_hint(package_app_path: Path) -> None:
     """Ship Android package string inside the Python app (APK has no pyproject.toml)."""
@@ -54,6 +242,7 @@ def _write_ble_package_hint(package_app_path: Path) -> None:
 
 def sync_ble_gatt_java(flutter_dir: Path) -> None:
     """Write BleGattBridge.java into the Flet Android app package; extend proguard."""
+    _patch_gradle_network(flutter_dir)
     sys.path.insert(0, str(ROOT / "src"))
     try:
         from android_ble_bridge_meta import ble_bundle_package_from_pyproject

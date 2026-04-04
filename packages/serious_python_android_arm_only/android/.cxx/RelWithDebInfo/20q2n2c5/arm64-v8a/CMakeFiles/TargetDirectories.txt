@@ -1,0 +1,3 @@
+C:/Users/nssf2/Downloads/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/android/.cxx/RelWithDebInfo/20q2n2c5/arm64-v8a/CMakeFiles/serious_python.dir
+C:/Users/nssf2/Downloads/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/android/.cxx/RelWithDebInfo/20q2n2c5/arm64-v8a/CMakeFiles/edit_cache.dir
+C:/Users/nssf2/Downloads/flet-python-bluethoot-app-skeleton/packages/serious_python_android_arm_only/android/.cxx/RelWithDebInfo/20q2n2c5/arm64-v8a/CMakeFiles/rebuild_cache.dir
