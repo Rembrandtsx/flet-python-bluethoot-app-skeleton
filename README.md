@@ -147,6 +147,8 @@ A Flet window should open with the Bluetooth prototype UI.
 
 ---
 
+Sofia es Fea
+
 ## 5. Android – Overview and Options
 
 There are two main ways to test your Flet UI on Android:
